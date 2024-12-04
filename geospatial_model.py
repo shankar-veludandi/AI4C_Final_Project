@@ -18,8 +18,8 @@ from scipy.stats import rankdata
 # Load dataset
 data = pd.read_csv('/content/drive/MyDrive/AI4C/Final_Project/northeast_invasive_insects.csv')
 
-# Filter for Spotted Lanternfly
-data = data[data['taxon_species_name'] == 'Lycorma delicatula']
+# Filter for Species
+data = data[data['taxon_species_name'] == 'Lymantria dispar']
 data = data.dropna(subset=['time_observed_at'])
 
 # Convert timestamps to datetime
@@ -32,9 +32,6 @@ data['time_percentile'] = rankdata(data['time_seconds'], method='max') / len(dat
 # Load states shapefile
 shapefile_path = "/content/drive/MyDrive/AI4C/Final_Project/ne_10m_admin_1_states_provinces/ne_10m_admin_1_states_provinces.shp"
 states = gpd.read_file(shapefile_path)
-
-#print(states['name'])
-
 
 northeast_states = ['New York', 'Vermont', 'New Hampshire', 'Maine','Massachusetts', 'Connecticut', 'Rhode Island', 'New Jersey', 'Pennsylvania', 'District of Columbia', ]
 
@@ -70,7 +67,7 @@ for x, y, label in zip(states.geometry.centroid.x, states.geometry.centroid.y, s
     ax.text(x, y, label, fontsize=8, ha='center', zorder=3)
 plt.xlim(-80.0, -65.0)  # Longitude range
 plt.ylim(37.0, 47.0)    # Latitude range
-plt.title("Time-Based Heatmap of Spotted Lanternfly Sightings by State")
+plt.title("Time-Based Heatmap of Spongy Moth by State")
 plt.xlabel("Longitude")
 plt.ylabel("Latitude")
 plt.show()
@@ -84,7 +81,10 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Input, TimeDistributed, Conv1D, MaxPooling1D, Flatten
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from scipy.stats import rankdata
+from sklearn.metrics import r2_score
+from geopy.distance import geodesic
 
 # List of counties in the northeastern U.S.
 northeast_counties = [
@@ -93,25 +93,25 @@ northeast_counties = [
     "Oxford", "Penobscot", "Piscataquis", "Sagadahoc", "Somerset", "Waldo", "Washington", "York", # Maine
     "Barnstable", "Berkshire", "Bristol", "Dukes", "Essex", "Franklin", "Hampden", "Hampshire", "Middlesex",
     "Nantucket", "Norfolk", "Plymouth", "Suffolk", "Worcester", # Massachusetts
-    "Belknap", "Carroll", "Cheshire", "Coös", "Grafton", "Hillsborough", "Merrimack", "Rockingham",
+    "Belknap", "Carroll", "Cheshire", "Coös", "Grafton", "Hillsborough", "Merrimack", "Rockingham", 
     "Strafford", "Sullivan", # New Hampshire
     "Atlantic", "Bergen", "Burlington", "Camden", "Cape May", "Cumberland", "Essex", "Gloucester",
     "Hudson", "Hunterdon", "Mercer", "Middlesex", "Monmouth", "Morris", "Ocean", "Passaic", "Salem",
     "Somerset", "Sussex", "Union", "Warren", # New Jersey
     "Albany", "Allegany", "Bronx", "Broome", "Cattaraugus", "Cayuga", "Chautauqua", "Chemung", "Chenango",
-    "Clinton", "Columbia", "Cortland", "Delaware", "Dutchess", "Erie", "Essex", "Franklin", "Fulton",
+    "Clinton", "Columbia", "Cortland", "Delaware", "Dutchess", "Erie", "Essex", "Franklin", "Fulton", 
     "Genesee", "Greene", "Hamilton", "Herkimer", "Jefferson", "Kings", "Lewis", "Livingston", "Madison",
     "Monroe", "Montgomery", "Nassau", "New York", "Niagara", "Oneida", "Onondaga", "Ontario", "Orange",
     "Orleans", "Oswego", "Otsego", "Putnam", "Queens", "Rensselaer", "Richmond", "Rockland", "Saratoga",
     "Schenectady", "Schoharie", "Schuyler", "Seneca", "St. Lawrence", "Steuben", "Suffolk", "Sullivan",
     "Tioga", "Tompkins", "Ulster", "Warren", "Washington", "Wayne", "Westchester", "Wyoming", "Yates", # New York
     "Adams", "Allegheny", "Armstrong", "Beaver", "Bedford", "Berks", "Blair", "Bradford", "Bucks", "Butler",
-    "Cambria", "Cameron", "Carbon", "Centre", "Chester", "Clarion", "Clearfield", "Clinton", "Columbia",
-    "Crawford", "Cumberland", "Dauphin", "Delaware", "Elk", "Erie", "Fayette", "Forest", "Franklin",
-    "Fulton", "Greene", "Huntingdon", "Indiana", "Jefferson", "Juniata", "Lackawanna", "Lancaster",
-    "Lawrence", "Lebanon", "Lehigh", "Luzerne", "Lycoming", "McKean", "Monroe", "Montgomery", "Montour",
-    "Northampton", "Northumberland", "Perry", "Philadelphia", "Pike", "Potter", "Schuylkill", "Snyder",
-    "Somerset", "Sullivan", "Susquehanna", "Tioga", "Union", "Venango", "Warren", "Washington", "Wayne",
+    "Cambria", "Cameron", "Carbon", "Centre", "Chester", "Clarion", "Clearfield", "Clinton", "Columbia", 
+    "Crawford", "Cumberland", "Dauphin", "Delaware", "Elk", "Erie", "Fayette", "Forest", "Franklin", 
+    "Fulton", "Greene", "Huntingdon", "Indiana", "Jefferson", "Juniata", "Lackawanna", "Lancaster", 
+    "Lawrence", "Lebanon", "Lehigh", "Luzerne", "Lycoming", "McKean", "Monroe", "Montgomery", "Montour", 
+    "Northampton", "Northumberland", "Perry", "Philadelphia", "Pike", "Potter", "Schuylkill", "Snyder", 
+    "Somerset", "Sullivan", "Susquehanna", "Tioga", "Union", "Venango", "Warren", "Washington", "Wayne", 
     "Westmoreland", "Wyoming", "York", # Pennsylvania
     "Bristol", "Kent", "Newport", "Providence", "Washington", # Rhode Island
     "Addison", "Bennington", "Caledonia", "Chittenden", "Essex", "Franklin", "Grand Isle", "Lamoille",
@@ -121,7 +121,7 @@ northeast_counties = [
 # Load dataset
 data = pd.read_csv('/content/drive/MyDrive/AI4C/Final_Project/northeast_invasive_insects.csv')
 
-data = data[data['taxon_species_name'] == 'Lycorma delicatula']
+data = data[data['taxon_species_name'] == 'Lymantria dispar']
 
 # Convert time_observed_at to datetime and filter out rows without timestamps
 data['time_observed_at'] = pd.to_datetime(data['time_observed_at'], errors='coerce')
@@ -179,10 +179,49 @@ model = Sequential([
 
 model.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
 
-model.fit(X_train, y_train, epochs=5, batch_size=32, validation_data=(X_test, y_test))
+# Define the ModelCheckpoint callback
+checkpoint = ModelCheckpoint(
+    filepath='best_model.keras',  # Filepath to save the model
+    monitor='val_loss',        # Metric to monitor
+    save_best_only=True,       # Save only the best weights
+    mode='min',                # We want the minimum val_loss
+    verbose=1                  # Show a message when saving occurs
+)
+
+# Define EarlyStopping
+early_stopping = EarlyStopping(
+    monitor='val_loss',  # Metric to monitor
+    patience=1,          # Number of epochs with no improvement to stop
+    restore_best_weights=True  # Restore the best weights after stopping
+)
+
+model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test), callbacks=[checkpoint, early_stopping])
+
+model.load_weights('best_model.keras')
 
 # Predict using the model
 predictions = model.predict(X_test)
+
+# Calculate MAE (already part of model metrics)
+mae = np.mean(np.abs(y_test - predictions))
+print("Mean Absolute Error (MAE):", mae)
+
+# Calculate MSE
+mse = np.mean(np.square(y_test - predictions))
+print("Mean Squared Error (MSE):", mse)
+
+# Calculate R-Squared
+r2 = r2_score(y_test, predictions)
+print("R-Squared (R²):", r2)
+
+# Calculate Geographic Error
+def haversine_error(y_true, y_pred):
+    return [geodesic(y_true[i], y_pred[i]).km for i in range(len(y_true))]
+
+geo_errors = haversine_error(y_test, predictions)
+mean_geo_error = np.mean(geo_errors)
+print("Mean Geographic Error (km):", mean_geo_error)
+
 
 # Convert predictions to GeoDataFrame for visualization
 predicted_df = pd.DataFrame(predictions, columns=['latitude', 'longitude'])
@@ -205,20 +244,21 @@ counties = counties[counties['NAME'].isin(northeast_counties)]
 # Plot predictions on filtered counties
 fig, ax = plt.subplots(figsize=(10, 8))
 counties.plot(ax=ax, color='white', edgecolor='black', zorder=1)
-predicted_gdf.plot(ax=ax, color='red', alpha=0.05, zorder=2)
+predicted_gdf.plot(ax=ax, color='red', alpha=0.1, zorder=2)
 
 # Get the bounds of the spotted lanternfly sightings
-min_lat, max_lat = data['latitude'].min(), data['latitude'].max()
-min_lon, max_lon = data['longitude'].min(), data['longitude'].max()
+min_lat, max_lat = predicted_gdf['latitude'].min(), predicted_gdf['latitude'].max()
+min_lon, max_lon = predicted_gdf['longitude'].min(), predicted_gdf['longitude'].max()
 
 for x, y, label in zip(counties.geometry.centroid.x, counties.geometry.centroid.y, counties['NAME']):
   if min_lon < x < max_lon and min_lat < y < max_lat:
     ax.text(x, y, label, fontsize=6, ha='center', zorder=3)
+
 plt.xlim(min_lon, max_lon)  # Longitude range
 plt.ylim(min_lat, max_lat)    # Latitude range
 
 plt.xlabel('Longitude')
 plt.ylabel('Latitude')
-plt.title('Predicted Spread of Spotted Lanternfly by County')
+plt.title('Predicted Spread of Spongy Moth by County')
 plt.legend()
 plt.show()
