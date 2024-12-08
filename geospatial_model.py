@@ -19,7 +19,7 @@ from scipy.stats import rankdata
 data = pd.read_csv('/content/drive/MyDrive/AI4C/Final_Project/northeast_invasive_insects.csv')
 
 # Filter for Species
-data = data[data['taxon_species_name'] == 'Lymantria dispar']
+data = data[data['taxon_species_name'] == 'Lycorma delicatula']
 data = data.dropna(subset=['time_observed_at'])
 
 # Convert timestamps to datetime
@@ -67,7 +67,7 @@ for x, y, label in zip(states.geometry.centroid.x, states.geometry.centroid.y, s
     ax.text(x, y, label, fontsize=8, ha='center', zorder=3)
 plt.xlim(-80.0, -65.0)  # Longitude range
 plt.ylim(37.0, 47.0)    # Latitude range
-plt.title("Time-Based Heatmap of Spongy Moth by State")
+plt.title("Time-Based Heatmap of Spotted Lanternfly by State")
 plt.xlabel("Longitude")
 plt.ylabel("Latitude")
 plt.show()
@@ -76,6 +76,7 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
@@ -85,6 +86,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from scipy.stats import rankdata
 from sklearn.metrics import r2_score
 from geopy.distance import geodesic
+from shapely.geometry import Point
 
 # List of counties in the northeastern U.S.
 northeast_counties = [
@@ -93,25 +95,25 @@ northeast_counties = [
     "Oxford", "Penobscot", "Piscataquis", "Sagadahoc", "Somerset", "Waldo", "Washington", "York", # Maine
     "Barnstable", "Berkshire", "Bristol", "Dukes", "Essex", "Franklin", "Hampden", "Hampshire", "Middlesex",
     "Nantucket", "Norfolk", "Plymouth", "Suffolk", "Worcester", # Massachusetts
-    "Belknap", "Carroll", "Cheshire", "Coös", "Grafton", "Hillsborough", "Merrimack", "Rockingham", 
+    "Belknap", "Carroll", "Cheshire", "Coös", "Grafton", "Hillsborough", "Merrimack", "Rockingham",
     "Strafford", "Sullivan", # New Hampshire
     "Atlantic", "Bergen", "Burlington", "Camden", "Cape May", "Cumberland", "Essex", "Gloucester",
     "Hudson", "Hunterdon", "Mercer", "Middlesex", "Monmouth", "Morris", "Ocean", "Passaic", "Salem",
     "Somerset", "Sussex", "Union", "Warren", # New Jersey
     "Albany", "Allegany", "Bronx", "Broome", "Cattaraugus", "Cayuga", "Chautauqua", "Chemung", "Chenango",
-    "Clinton", "Columbia", "Cortland", "Delaware", "Dutchess", "Erie", "Essex", "Franklin", "Fulton", 
+    "Clinton", "Columbia", "Cortland", "Delaware", "Dutchess", "Erie", "Essex", "Franklin", "Fulton",
     "Genesee", "Greene", "Hamilton", "Herkimer", "Jefferson", "Kings", "Lewis", "Livingston", "Madison",
     "Monroe", "Montgomery", "Nassau", "New York", "Niagara", "Oneida", "Onondaga", "Ontario", "Orange",
     "Orleans", "Oswego", "Otsego", "Putnam", "Queens", "Rensselaer", "Richmond", "Rockland", "Saratoga",
     "Schenectady", "Schoharie", "Schuyler", "Seneca", "St. Lawrence", "Steuben", "Suffolk", "Sullivan",
     "Tioga", "Tompkins", "Ulster", "Warren", "Washington", "Wayne", "Westchester", "Wyoming", "Yates", # New York
     "Adams", "Allegheny", "Armstrong", "Beaver", "Bedford", "Berks", "Blair", "Bradford", "Bucks", "Butler",
-    "Cambria", "Cameron", "Carbon", "Centre", "Chester", "Clarion", "Clearfield", "Clinton", "Columbia", 
-    "Crawford", "Cumberland", "Dauphin", "Delaware", "Elk", "Erie", "Fayette", "Forest", "Franklin", 
-    "Fulton", "Greene", "Huntingdon", "Indiana", "Jefferson", "Juniata", "Lackawanna", "Lancaster", 
-    "Lawrence", "Lebanon", "Lehigh", "Luzerne", "Lycoming", "McKean", "Monroe", "Montgomery", "Montour", 
-    "Northampton", "Northumberland", "Perry", "Philadelphia", "Pike", "Potter", "Schuylkill", "Snyder", 
-    "Somerset", "Sullivan", "Susquehanna", "Tioga", "Union", "Venango", "Warren", "Washington", "Wayne", 
+    "Cambria", "Cameron", "Carbon", "Centre", "Chester", "Clarion", "Clearfield", "Clinton", "Columbia",
+    "Crawford", "Cumberland", "Dauphin", "Delaware", "Elk", "Erie", "Fayette", "Forest", "Franklin",
+    "Fulton", "Greene", "Huntingdon", "Indiana", "Jefferson", "Juniata", "Lackawanna", "Lancaster",
+    "Lawrence", "Lebanon", "Lehigh", "Luzerne", "Lycoming", "McKean", "Monroe", "Montgomery", "Montour",
+    "Northampton", "Northumberland", "Perry", "Philadelphia", "Pike", "Potter", "Schuylkill", "Snyder",
+    "Somerset", "Sullivan", "Susquehanna", "Tioga", "Union", "Venango", "Warren", "Washington", "Wayne",
     "Westmoreland", "Wyoming", "York", # Pennsylvania
     "Bristol", "Kent", "Newport", "Providence", "Washington", # Rhode Island
     "Addison", "Bennington", "Caledonia", "Chittenden", "Essex", "Franklin", "Grand Isle", "Lamoille",
@@ -121,7 +123,9 @@ northeast_counties = [
 # Load dataset
 data = pd.read_csv('/content/drive/MyDrive/AI4C/Final_Project/northeast_invasive_insects.csv')
 
-data = data[data['taxon_species_name'] == 'Lymantria dispar']
+data = data.sort_values(by='time_observed_at')
+
+data = data[data['taxon_species_name'] == 'Harmonia axyridis']
 
 # Convert time_observed_at to datetime and filter out rows without timestamps
 data['time_observed_at'] = pd.to_datetime(data['time_observed_at'], errors='coerce')
@@ -147,7 +151,7 @@ data = pd.concat([data, encoded_county, encoded_state], axis=1)
 data.drop(['place_county_name', 'place_state_name', 'time_observed_at', 'time_seconds'], axis=1, inplace=True)
 
 # Define features and target
-features = ['latitude', 'longitude', 'year', 'month', 'day', 'time_percentile'] + list(encoded_county.columns) + list(encoded_state.columns)
+features = ['latitude', 'longitude', 'year', 'month', 'day'] #'time_percentile'] #+ list(encoded_county.columns) + list(encoded_state.columns)
 X = data[features].values
 y = data[['latitude', 'longitude']].values  # Predict future latitude and longitude
 
@@ -163,102 +167,264 @@ for i in range(len(X) - sequence_length):
     y_seq.append(y[i + sequence_length])
 X_seq, y_seq = np.array(X_seq), np.array(y_seq)
 
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X_seq, y_seq, test_size=0.2, random_state=42)
+print(X_seq.shape)
 
-# Build LSTM model
+train_ratio = 0.6
+val_ratio = 0.2
+test_ratio = 0.2
+
+n = len(X_seq)
+train_end = int(n * train_ratio)
+val_end = int(n * (train_ratio + val_ratio))
+
+# Train-Validation-Test split
+X_train, y_train = X_seq[:train_end], y_seq[:train_end]
+X_val, y_val = X_seq[train_end:val_end], y_seq[train_end:val_end]
+X_test, y_test = X_seq[val_end:], y_seq[val_end:]
+
+# Check the splits
+print(f"Training data: {X_train.shape}, {y_train.shape}")
+print(f"Validation data: {X_val.shape}, {y_val.shape}")
+print(f"Test data: {X_test.shape}, {y_test.shape}")
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Input, TimeDistributed, Conv1D, MaxPooling1D, Flatten, LSTM, Dense, Reshape, Dropout, BatchNormalization
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.regularizers import l2
+from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Reshape X_train, X_val, and X_test to 2D for scaling
+X_train_reshape = X_train.reshape((X_train.shape[0], X_train.shape[1] * X_train.shape[2]))
+X_val_reshape = X_val.reshape((X_val.shape[0], X_val.shape[1] * X_val.shape[2]))
+X_test_reshape = X_test.reshape((X_test.shape[0], X_test.shape[1] * X_test.shape[2]))
+
+# Scale X (Inputs)
+scaler_X = StandardScaler()
+X_train_scaled = scaler_X.fit_transform(X_train_reshape)
+X_val_scaled = scaler_X.transform(X_val_reshape)
+X_test_scaled = scaler_X.transform(X_test_reshape)
+
+# Reshape back to 3D for the LSTM
+X_train_scaled = X_train_scaled.reshape(X_train.shape)
+X_val_scaled = X_val_scaled.reshape(X_val.shape)
+X_test_scaled = X_test_scaled.reshape(X_test.shape)
+
+# Scale y (Outputs)  <-- This is the new part
+scaler_y = StandardScaler() # Create a new scaler for the output (y)
+y_train_scaled = scaler_y.fit_transform(y_train) # Fit and transform y_train
+y_val_scaled = scaler_y.transform(y_val) # Transform y_val
+y_test_scaled = scaler_y.transform(y_test) # Transform y_test
+
+# Reverse scaling during prediction
+def reverse_scaling(predictions, scaler):
+    # Apply inverse transform directly to predictions (no reshape needed)
+    original_scale_data = scaler.inverse_transform(predictions)
+    return original_scale_data
+
+
+
+# Refined LSTM-CNN hybrid model
 model = Sequential([
-    Input(shape=(sequence_length, X_seq.shape[2], 1)),  # Define input shape explicitly
-    TimeDistributed(Conv1D(filters=32, kernel_size=3, activation='relu')),
+    Input(shape=(12, X_train.shape[2])),  # Input shape matches X_seq
+    Reshape((12, X_train.shape[2], 1)),
+    TimeDistributed(Conv1D(filters=128, kernel_size=3, activation='relu', kernel_regularizer=l2(1e-4))),
+    TimeDistributed(BatchNormalization()),
     TimeDistributed(MaxPooling1D(pool_size=2)),
     TimeDistributed(Flatten()),
-    LSTM(64, activation='relu', return_sequences=False),
-    Dense(32, activation='relu'),
-    Dense(2)  # Latitude and Longitude output
+    TimeDistributed(Dense(256, activation='relu')),
+    BatchNormalization(),
+    LSTM(64, activation='relu', return_sequences=False, kernel_regularizer=l2(1e-4)),
+    Dropout(0.4),
+    Dense(32, activation='relu', kernel_regularizer=l2(1e-4)),
+    Dropout(0.4),
+    Dense(2, kernel_regularizer=l2(1e-4))  # Latitude and Longitude output
 ])
 
-model.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
+# Compile the model
+model.compile(optimizer=Adam(learning_rate=1e-5), loss='mse', metrics=['mae'])
 
-# Define the ModelCheckpoint callback
-checkpoint = ModelCheckpoint(
-    filepath='best_model.keras',  # Filepath to save the model
-    monitor='val_loss',        # Metric to monitor
-    save_best_only=True,       # Save only the best weights
-    mode='min',                # We want the minimum val_loss
-    verbose=1                  # Show a message when saving occurs
+# Print model summary
+model.summary()
+
+# Callbacks
+checkpoint = ModelCheckpoint(filepath='best_model.keras', monitor='val_loss', save_best_only=True, mode='min', verbose=1)
+early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+# Train the model
+history = model.fit(
+    X_train_scaled,
+    y_train_scaled,
+    epochs=100,
+    batch_size=32,
+    validation_data=(X_val_scaled, y_val_scaled),
+    callbacks=[checkpoint, early_stopping]
 )
 
-# Define EarlyStopping
-early_stopping = EarlyStopping(
-    monitor='val_loss',  # Metric to monitor
-    patience=1,          # Number of epochs with no improvement to stop
-    restore_best_weights=True  # Restore the best weights after stopping
-)
-
-model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test), callbacks=[checkpoint, early_stopping])
-
+# Load the best weights
 model.load_weights('best_model.keras')
 
-# Predict using the model
-predictions = model.predict(X_test)
+# Evaluate the model
+test_loss, test_mae = model.evaluate(X_test_scaled, y_test_scaled, verbose=1)
+print(f"Test Loss: {test_loss}, Test MAE: {test_mae}")
 
-# Calculate MAE (already part of model metrics)
-mae = np.mean(np.abs(y_test - predictions))
-print("Mean Absolute Error (MAE):", mae)
+# Predict and reverse-scale
+predictions = model.predict(X_test_scaled)
+predictions_original_scale = reverse_scaling(predictions, scaler_y)
+y_test_original_scale = scaler_y.inverse_transform(y_test_scaled)
 
-# Calculate MSE
-mse = np.mean(np.square(y_test - predictions))
-print("Mean Squared Error (MSE):", mse)
+percentiles = [90, 95, 99]
 
-# Calculate R-Squared
-r2 = r2_score(y_test, predictions)
-print("R-Squared (R²):", r2)
+def percentile_spread_comparison(predictions, actual, percentiles=[10, 50, 90]):
+    """
+    Compare percentile spreads for predictions and actual data.
+    """
+    pred_lat_percentiles = np.percentile(predictions[:, 0], percentiles)
+    pred_lon_percentiles = np.percentile(predictions[:, 1], percentiles)
+    actual_lat_percentiles = np.percentile(actual[:, 0], percentiles)
+    actual_lon_percentiles = np.percentile(actual[:, 1], percentiles)
 
-# Calculate Geographic Error
-def haversine_error(y_true, y_pred):
-    return [geodesic(y_true[i], y_pred[i]).km for i in range(len(y_true))]
+    return {
+        'Latitude': {
+            'Predicted': pred_lat_percentiles,
+            'Actual': actual_lat_percentiles
+        },
+        'Longitude': {
+            'Predicted': pred_lon_percentiles,
+            'Actual': actual_lon_percentiles
+        }
+    }
 
-geo_errors = haversine_error(y_test, predictions)
-mean_geo_error = np.mean(geo_errors)
-print("Mean Geographic Error (km):", mean_geo_error)
+# Compute percentile spread comparison
+spread_comparison = percentile_spread_comparison(predictions_original_scale, y_test_original_scale, percentiles)
+
+# Print the results
+print("Percentile Spread Comparison (Latitude):")
+for p, pred, actual in zip(percentiles, spread_comparison['Latitude']['Predicted'], spread_comparison['Latitude']['Actual']):
+    print(f"{p}th Percentile - Predicted: {pred:.2f}, Actual: {actual:.2f}")
+
+print("\nPercentile Spread Comparison (Longitude):")
+for p, pred, actual in zip(percentiles, spread_comparison['Longitude']['Predicted'], spread_comparison['Longitude']['Actual']):
+    print(f"{p}th Percentile - Predicted: {pred:.2f}, Actual: {actual:.2f}")
 
 
-# Convert predictions to GeoDataFrame for visualization
-predicted_df = pd.DataFrame(predictions, columns=['latitude', 'longitude'])
+# Calculate the predicted centroid
+predicted_centroid = predictions_original_scale.mean(axis=0)
+
+# Calculate actual centroid
+actual_centroid = y_test_original_scale.mean(axis=0)
+
+# Calculate the geographic error
+geo_error = geodesic(actual_centroid, predicted_centroid).km
+
+# Print the results
+print("Predicted Centroid (Latitude, Longitude):", predicted_centroid)
+print("Actual Centroid (Latitude, Longitude):", actual_centroid)
+print("Geographic Error (km):", geo_error)
 
 # Define the shapefile path
 shapefile_path = "/content/drive/MyDrive/AI4C/Final_Project/ne_10m_admin_2_counties/ne_10m_admin_2_counties.shp"
 
-# Load the shapefile
+from matplotlib.patches import Ellipse
+import numpy as np
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from shapely.geometry import Point
+
+# Function to create confidence ellipse
+def create_confidence_ellipse(data, ax, color, label):
+    # Calculate covariance matrix and mean
+    cov = np.cov(data[:, 1], data[:, 0])  # Covariance of longitude, latitude
+    mean_lon, mean_lat = np.mean(data[:, 1]), np.mean(data[:, 0])
+
+    # Eigenvalues and eigenvectors
+    eigvals, eigvecs = np.linalg.eig(cov)
+    width, height = 2 * np.sqrt(eigvals)  # Scale by 2 standard deviations
+    angle = np.degrees(np.arctan2(*eigvecs[:, 0][::-1]))
+
+    # Create and add ellipse
+    ellipse = Ellipse(
+        xy=(mean_lon, mean_lat),
+        width=width,
+        height=height,
+        angle=angle,
+        edgecolor=color,
+        facecolor='none',
+        linestyle='--',
+        linewidth=2,
+        label=label
+    )
+    ax.add_patch(ellipse)
+    return mean_lon, mean_lat, width, height  # Return center for reference
+
+# Plot the predicted and actual spreads on the map
+fig, ax = plt.subplots(figsize=(16, 10))
+
+# Load counties shapefile
 counties = gpd.read_file(shapefile_path)
 
-# Check and assign CRS
-predicted_gdf = gpd.GeoDataFrame(
-    predicted_df,
-    geometry=gpd.points_from_xy(predicted_df['longitude'], predicted_df['latitude']),
-    crs="EPSG:4326"
-)
-
+# Filter for northeastern counties
 counties = counties[counties['NAME'].isin(northeast_counties)]
 
-# Plot predictions on filtered counties
-fig, ax = plt.subplots(figsize=(10, 8))
-counties.plot(ax=ax, color='white', edgecolor='black', zorder=1)
-predicted_gdf.plot(ax=ax, color='red', alpha=0.1, zorder=2)
+print("Min Latitude:", min_lat)
+print("Max Latitude:", max_lat)
+print("Min Longitude:", min_lon)
+print("Max Longitude:", max_lon)
 
-# Get the bounds of the spotted lanternfly sightings
-min_lat, max_lat = predicted_gdf['latitude'].min(), predicted_gdf['latitude'].max()
-min_lon, max_lon = predicted_gdf['longitude'].min(), predicted_gdf['longitude'].max()
+# Filter counties to the northeastern U.S.
+counties = counties.cx[min_lon:max_lon, min_lat:max_lat]
 
+# Ensure counties CRS matches centroids
+if counties.crs != "EPSG:4326":
+    counties = counties.to_crs("EPSG:4326")
+
+counties.plot(ax=ax, color='white', edgecolor='black')
+
+# Add confidence ellipses
+pred_mean_lon, pred_mean_lat, pred_width, pred_height = create_confidence_ellipse(
+    predictions_original_scale, ax, color='blue', label='Predicted Spread'
+)
+actual_mean_lon, actual_mean_lat, actual_width, actual_height = create_confidence_ellipse(
+    y_test_original_scale, ax, color='red', label='Actual Spread'
+)
+
+# Add points for centroids
+predicted_point = gpd.GeoDataFrame(
+    geometry=[Point(predicted_centroid[1], predicted_centroid[0])],  # Longitude, Latitude
+    crs="EPSG:4326"
+)
+actual_point = gpd.GeoDataFrame(
+    geometry=[Point(actual_centroid[1], actual_centroid[0])],  # Longitude, Latitude
+    crs="EPSG:4326"
+)
+predicted_point.plot(ax=ax, color='blue', markersize=100, label='Predicted Centroid', zorder=3)
+actual_point.plot(ax=ax, color='red', markersize=100, label='Actual Centroid', zorder=3)
+
+# Add county names (optional)
 for x, y, label in zip(counties.geometry.centroid.x, counties.geometry.centroid.y, counties['NAME']):
-  if min_lon < x < max_lon and min_lat < y < max_lat:
-    ax.text(x, y, label, fontsize=6, ha='center', zorder=3)
+    ax.text(x, y, label, fontsize=6, ha='center', zorder=5)
 
-plt.xlim(min_lon, max_lon)  # Longitude range
-plt.ylim(min_lat, max_lat)    # Latitude range
+# Calculate the bounding box using the larger of the two spreads
+min_lon = min(pred_mean_lon - pred_width / 2, actual_mean_lon - actual_width / 2)
+max_lon = max(pred_mean_lon + pred_width / 2, actual_mean_lon + actual_width / 2)
+min_lat = min(pred_mean_lat - pred_height / 2, actual_mean_lat - actual_height / 2)
+max_lat = max(pred_mean_lat + pred_height / 2, actual_mean_lat + actual_height / 2)
 
-plt.xlabel('Longitude')
-plt.ylabel('Latitude')
-plt.title('Predicted Spread of Spongy Moth by County')
+# Optional: Add padding
+padding_lat = (max_lat - min_lat) * 0.2
+padding_lon = (max_lon - min_lon) * 0.2
+
+# Set plot limits to focus on the northeastern U.S.
+plt.xlim(min_lon - padding_lon, max_lon + padding_lon)
+plt.ylim(min_lat - padding_lat, max_lat + padding_lat)
+
+# Customize plot
+plt.xlabel("Longitude")
+plt.ylabel("Latitude")
+plt.title("Confidence Ellipses for Predicted and Actual Spread")
 plt.legend()
+plt.grid(False)  # Remove gridlines for better clarity
 plt.show()
