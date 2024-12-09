@@ -10,16 +10,33 @@ Original file is located at
 from google.colab import drive
 drive.mount('/content/drive')
 
+COMMON_NAME = 'Western Honey Bee'
+SPECIES_NAME = 'Apis mellifera'
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import geopandas as gpd
 from scipy.stats import rankdata
+import numpy as np
+from matplotlib.patches import Circle
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
+from sklearn.metrics import r2_score
+from geopy.distance import geodesic
+from shapely.geometry import Point
+from tensorflow.keras.layers import Input, TimeDistributed, Conv1D, MaxPooling1D, Flatten, LSTM, Dense, Reshape, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.regularizers import l2
+from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
 
 # Load dataset
 data = pd.read_csv('/content/drive/MyDrive/AI4C/Final_Project/northeast_invasive_insects.csv')
 
 # Filter for Species
-data = data[data['taxon_species_name'] == 'Lycorma delicatula']
+data = data[data['taxon_species_name'] == SPECIES_NAME]
 data = data.dropna(subset=['time_observed_at'])
 
 # Convert timestamps to datetime
@@ -67,26 +84,10 @@ for x, y, label in zip(states.geometry.centroid.x, states.geometry.centroid.y, s
     ax.text(x, y, label, fontsize=8, ha='center', zorder=3)
 plt.xlim(-80.0, -65.0)  # Longitude range
 plt.ylim(37.0, 47.0)    # Latitude range
-plt.title("Time-Based Heatmap of Spotted Lanternfly by State")
+plt.title(f"Time-Based Heatmap of {COMMON_NAME} by State")
 plt.xlabel("Longitude")
 plt.ylabel("Latitude")
 plt.show()
-
-import pandas as pd
-import numpy as np
-import geopandas as gpd
-import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Input, TimeDistributed, Conv1D, MaxPooling1D, Flatten
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from scipy.stats import rankdata
-from sklearn.metrics import r2_score
-from geopy.distance import geodesic
-from shapely.geometry import Point
 
 # List of counties in the northeastern U.S.
 northeast_counties = [
@@ -125,7 +126,7 @@ data = pd.read_csv('/content/drive/MyDrive/AI4C/Final_Project/northeast_invasive
 
 data = data.sort_values(by='time_observed_at')
 
-data = data[data['taxon_species_name'] == 'Harmonia axyridis']
+data = data[data['taxon_species_name'] == SPECIES_NAME]
 
 # Convert time_observed_at to datetime and filter out rows without timestamps
 data['time_observed_at'] = pd.to_datetime(data['time_observed_at'], errors='coerce')
@@ -136,22 +137,8 @@ data['year'] = data['time_observed_at'].dt.year
 data['month'] = data['time_observed_at'].dt.month
 data['day'] = data['time_observed_at'].dt.day
 
-# Calculate time in seconds and normalize
-data['time_seconds'] = (data['time_observed_at'] - data['time_observed_at'].min()).dt.total_seconds()
-data['time_percentile'] = rankdata(data['time_seconds'], method='max') / len(data)
-
-# One-hot encode place_county_name and place_state_name
-encoded_county = pd.get_dummies(data['place_county_name'], prefix='county')
-encoded_state = pd.get_dummies(data['place_state_name'], prefix='state')
-
-# Concatenate one-hot encoded features to the dataset
-data = pd.concat([data, encoded_county, encoded_state], axis=1)
-
-# Drop unnecessary columns for modeling
-data.drop(['place_county_name', 'place_state_name', 'time_observed_at', 'time_seconds'], axis=1, inplace=True)
-
 # Define features and target
-features = ['latitude', 'longitude', 'year', 'month', 'day'] #'time_percentile'] #+ list(encoded_county.columns) + list(encoded_state.columns)
+features = ['latitude', 'longitude', 'year', 'month', 'day']
 X = data[features].values
 y = data[['latitude', 'longitude']].values  # Predict future latitude and longitude
 
@@ -167,8 +154,6 @@ for i in range(len(X) - sequence_length):
     y_seq.append(y[i + sequence_length])
 X_seq, y_seq = np.array(X_seq), np.array(y_seq)
 
-print(X_seq.shape)
-
 train_ratio = 0.6
 val_ratio = 0.2
 test_ratio = 0.2
@@ -182,38 +167,12 @@ X_train, y_train = X_seq[:train_end], y_seq[:train_end]
 X_val, y_val = X_seq[train_end:val_end], y_seq[train_end:val_end]
 X_test, y_test = X_seq[val_end:], y_seq[val_end:]
 
-# Check the splits
-print(f"Training data: {X_train.shape}, {y_train.shape}")
-print(f"Validation data: {X_val.shape}, {y_val.shape}")
-print(f"Test data: {X_test.shape}, {y_test.shape}")
-
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Input, TimeDistributed, Conv1D, MaxPooling1D, Flatten, LSTM, Dense, Reshape, Dropout, BatchNormalization
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.regularizers import l2
-from sklearn.preprocessing import StandardScaler
-import tensorflow as tf
-import numpy as np
-import matplotlib.pyplot as plt
-
 # Reshape X_train, X_val, and X_test to 2D for scaling
 X_train_reshape = X_train.reshape((X_train.shape[0], X_train.shape[1] * X_train.shape[2]))
 X_val_reshape = X_val.reshape((X_val.shape[0], X_val.shape[1] * X_val.shape[2]))
 X_test_reshape = X_test.reshape((X_test.shape[0], X_test.shape[1] * X_test.shape[2]))
 
-# Scale X (Inputs)
-scaler_X = StandardScaler()
-X_train_scaled = scaler_X.fit_transform(X_train_reshape)
-X_val_scaled = scaler_X.transform(X_val_reshape)
-X_test_scaled = scaler_X.transform(X_test_reshape)
-
-# Reshape back to 3D for the LSTM
-X_train_scaled = X_train_scaled.reshape(X_train.shape)
-X_val_scaled = X_val_scaled.reshape(X_val.shape)
-X_test_scaled = X_test_scaled.reshape(X_test.shape)
-
-# Scale y (Outputs)  <-- This is the new part
+# Scale y (Outputs)
 scaler_y = StandardScaler() # Create a new scaler for the output (y)
 y_train_scaled = scaler_y.fit_transform(y_train) # Fit and transform y_train
 y_val_scaled = scaler_y.transform(y_val) # Transform y_val
@@ -224,8 +183,6 @@ def reverse_scaling(predictions, scaler):
     # Apply inverse transform directly to predictions (no reshape needed)
     original_scale_data = scaler.inverse_transform(predictions)
     return original_scale_data
-
-
 
 # Refined LSTM-CNN hybrid model
 model = Sequential([
@@ -256,11 +213,11 @@ early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weig
 
 # Train the model
 history = model.fit(
-    X_train_scaled,
+    X_train,
     y_train_scaled,
     epochs=100,
     batch_size=32,
-    validation_data=(X_val_scaled, y_val_scaled),
+    validation_data=(X_val, y_val_scaled),
     callbacks=[checkpoint, early_stopping]
 )
 
@@ -268,11 +225,11 @@ history = model.fit(
 model.load_weights('best_model.keras')
 
 # Evaluate the model
-test_loss, test_mae = model.evaluate(X_test_scaled, y_test_scaled, verbose=1)
+test_loss, test_mae = model.evaluate(X_test, y_test_scaled, verbose=1)
 print(f"Test Loss: {test_loss}, Test MAE: {test_mae}")
 
 # Predict and reverse-scale
-predictions = model.predict(X_test_scaled)
+predictions = model.predict(X_test)
 predictions_original_scale = reverse_scaling(predictions, scaler_y)
 y_test_original_scale = scaler_y.inverse_transform(y_test_scaled)
 
@@ -321,12 +278,7 @@ actual_centroid = y_test_original_scale.mean(axis=0)
 geo_error = geodesic(actual_centroid, predicted_centroid).km
 
 # Print the results
-print("Predicted Centroid (Latitude, Longitude):", predicted_centroid)
-print("Actual Centroid (Latitude, Longitude):", actual_centroid)
 print("Geographic Error (km):", geo_error)
-
-# Define the shapefile path
-shapefile_path = "/content/drive/MyDrive/AI4C/Final_Project/ne_10m_admin_2_counties/ne_10m_admin_2_counties.shp"
 
 from matplotlib.patches import Ellipse
 import numpy as np
@@ -334,16 +286,23 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
 
+# Plot the predicted and actual spreads on the map
+fig, ax = plt.subplots(figsize=(16, 10))
+
 # Function to create confidence ellipse
-def create_confidence_ellipse(data, ax, color, label):
+def create_confidence_ellipse(data, ax, color, label, zorder=3):
     # Calculate covariance matrix and mean
     cov = np.cov(data[:, 1], data[:, 0])  # Covariance of longitude, latitude
     mean_lon, mean_lat = np.mean(data[:, 1]), np.mean(data[:, 0])
 
     # Eigenvalues and eigenvectors
     eigvals, eigvecs = np.linalg.eig(cov)
-    width, height = 2 * np.sqrt(eigvals)  # Scale by 2 standard deviations
+    width = max(0.001, 2 * np.sqrt(eigvals[0]) ) # Scale by 2 standard deviations
+    height = max(0.001, 2 * np.sqrt(eigvals[1]))
     angle = np.degrees(np.arctan2(*eigvecs[:, 0][::-1]))
+
+    print("Covariance Matrix:", cov)
+    print("Eigenvalues:", eigvals)
 
     # Create and add ellipse
     ellipse = Ellipse(
@@ -359,29 +318,6 @@ def create_confidence_ellipse(data, ax, color, label):
     )
     ax.add_patch(ellipse)
     return mean_lon, mean_lat, width, height  # Return center for reference
-
-# Plot the predicted and actual spreads on the map
-fig, ax = plt.subplots(figsize=(16, 10))
-
-# Load counties shapefile
-counties = gpd.read_file(shapefile_path)
-
-# Filter for northeastern counties
-counties = counties[counties['NAME'].isin(northeast_counties)]
-
-print("Min Latitude:", min_lat)
-print("Max Latitude:", max_lat)
-print("Min Longitude:", min_lon)
-print("Max Longitude:", max_lon)
-
-# Filter counties to the northeastern U.S.
-counties = counties.cx[min_lon:max_lon, min_lat:max_lat]
-
-# Ensure counties CRS matches centroids
-if counties.crs != "EPSG:4326":
-    counties = counties.to_crs("EPSG:4326")
-
-counties.plot(ax=ax, color='white', edgecolor='black')
 
 # Add confidence ellipses
 pred_mean_lon, pred_mean_lat, pred_width, pred_height = create_confidence_ellipse(
@@ -400,12 +336,8 @@ actual_point = gpd.GeoDataFrame(
     geometry=[Point(actual_centroid[1], actual_centroid[0])],  # Longitude, Latitude
     crs="EPSG:4326"
 )
-predicted_point.plot(ax=ax, color='blue', markersize=100, label='Predicted Centroid', zorder=3)
-actual_point.plot(ax=ax, color='red', markersize=100, label='Actual Centroid', zorder=3)
-
-# Add county names (optional)
-for x, y, label in zip(counties.geometry.centroid.x, counties.geometry.centroid.y, counties['NAME']):
-    ax.text(x, y, label, fontsize=6, ha='center', zorder=5)
+predicted_point.plot(ax=ax, color='blue', markersize=100, label='Predicted Centroid', zorder=4)
+actual_point.plot(ax=ax, color='red', markersize=100, label='Actual Centroid', zorder=4)
 
 # Calculate the bounding box using the larger of the two spreads
 min_lon = min(pred_mean_lon - pred_width / 2, actual_mean_lon - actual_width / 2)
@@ -416,6 +348,28 @@ max_lat = max(pred_mean_lat + pred_height / 2, actual_mean_lat + actual_height /
 # Optional: Add padding
 padding_lat = (max_lat - min_lat) * 0.2
 padding_lon = (max_lon - min_lon) * 0.2
+
+# Define the shapefile path
+shapefile_path = "/content/drive/MyDrive/AI4C/Final_Project/ne_10m_admin_2_counties/ne_10m_admin_2_counties.shp"
+
+# Load counties shapefile
+counties = gpd.read_file(shapefile_path)
+
+# Filter for northeastern counties
+counties = counties[counties['NAME'].isin(northeast_counties)]
+
+# Ensure counties CRS matches centroids
+if counties.crs != "EPSG:4326":
+    counties = counties.to_crs("EPSG:4326")
+
+# Filter counties to the northeastern U.S.
+counties = counties.cx[min_lon:max_lon, min_lat:max_lat]
+
+# Add county names (optional)
+for x, y, label in zip(counties.geometry.centroid.x, counties.geometry.centroid.y, counties['NAME']):
+    ax.text(x, y, label, fontsize=6, ha='center', zorder=5)
+
+counties.plot(ax=ax, color='white', edgecolor='black', zorder=0)
 
 # Set plot limits to focus on the northeastern U.S.
 plt.xlim(min_lon - padding_lon, max_lon + padding_lon)
